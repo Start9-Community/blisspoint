@@ -25,6 +25,7 @@ npm run lint                                    # ESLint
 npm test                                        # Vitest (UI utils)
 cargo test  --manifest-path proxy-rs/Cargo.toml # proxy-rs tests
 cargo clippy --manifest-path proxy-rs/Cargo.toml --all-targets -- -D warnings
+npm run startos:check                           # StartOS packaging typecheck
 ```
 
 CI runs all of these on every PR.
@@ -36,8 +37,15 @@ CI runs all of these on every PR.
 | `src/` | React/Vite UI |
 | `server/serve.cjs` | Serves the built UI and reverse-proxies `/api/*` |
 | `proxy-rs/` | Rust service; all miner communication via [asic-rs](https://github.com/256foundation/asic-rs) |
-| `startos/` | StartOS (Start9) packaging |
+| `startos/` | StartOS (Start9) packaging — see [startos/README.md](startos/README.md) |
+| `umbrel/`, `blisspoint-addon/`, `custom_components/` | Umbrel and Home Assistant packaging |
 | `.github/workflows/` | CI, release, and test-build pipelines |
+
+### Building the StartOS package locally
+
+`make x86` (or `make arm`) typechecks `startos/`, bundles it with `ncc`, and
+packs a sideloadable `blisspoint_<arch>.s9pk`. It pulls the already-published
+image named in `startos/manifest/index.ts` — it never builds one.
 
 ## Firmware support
 
@@ -51,7 +59,9 @@ Blisspoint does not implement per-firmware protocols itself — that lives upstr
 
 ## Releasing
 
-Releases are cut from `main` via the `release.yml` workflow (bump the version in `startos/versions/current.ts`, `startos/manifest/index.ts` and the `Makefile`, then run the workflow). The s9pk and GitHub Release are produced automatically.
+Releases are cut from `main` via the `release.yml` workflow: bump the version in `startos/versions/current.ts` and, when adopting a newer app build, the image tag in `startos/manifest/index.ts`. Then run the workflow. It packs the s9pk against the published image and creates the GitHub Release; it does **not** build or push a container image.
+
+`startos/versions/current.ts` carries a two-part version, `<upstream>:<revision>`. Bump the upstream part when adopting a new app version; bump only the revision when the change is packaging-only. The `Makefile` reads the package id from the manifest and needs no edit.
 
 The Umbrel packaging is version-pinned too: bump `version` in `umbrel/blisspoint/umbrel-app.yml` and the image tag in `umbrel/blisspoint/docker-compose.yml`, then mirror the changes to [heatpunk/umbrel-app-store](https://github.com/heatpunk/umbrel-app-store) so the community store serves the new version.
 

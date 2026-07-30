@@ -5,7 +5,7 @@ export const manifest = setupManifest({
   id: 'blisspoint',
   title: 'Blisspoint',
   license: 'MIT',
-  packageRepo: 'https://github.com/heatpunk/blisspoint',
+  packageRepo: 'https://github.com/Start9-Community/blisspoint',
   upstreamRepo: 'https://github.com/heatpunk/blisspoint',
   marketingUrl: 'https://github.com/heatpunk/blisspoint',
   donationUrl: null,
@@ -14,16 +14,8 @@ export const manifest = setupManifest({
   images: {
     blisspoint: {
       source: { dockerTag: 'ghcr.io/heatpunk/blisspoint:0.5.3' },
-      arch: ['x86_64'],
+      arch: ['x86_64', 'aarch64'],
     },
-  },
-  alerts: {
-    install: null,
-    update: null,
-    uninstall: null,
-    restore: null,
-    start: null,
-    stop: null,
   },
   dependencies: {},
 })

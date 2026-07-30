@@ -4,3 +4,9 @@ javascript
 .git
 *.s9pk
 pkg
+
+# StartOS packaging — not part of the app image, and excluding it keeps a
+# packaging-only edit from invalidating the image build cache.
+startos
+tsconfig.startos.json
+Makefile

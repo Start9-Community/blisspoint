@@ -1,30 +1,45 @@
-PKG = blisspoint.s9pk
+# Blisspoint is an application repo that also ships StartOS packaging, so it
+# cannot use the SDK's s9pk.mk: that expects `npm run build` to be the ncc
+# bundle step, and here it is the Vite build. The packaging equivalents are
+# `npm run startos:check` and `npm run startos:build`.
 
-.PHONY: all pack clean
+PKG_ID := blisspoint
 
-all: pack
+.PHONY: all x86 x86_64 arm arm64 aarch64 install clean check-deps
 
-# Generate manifest
-manifest.json: 
-	@echo "Generating manifest.json..."
-	@echo '{"type": "commonjs"}' > sdk-build/javascript/package.json
-	@node -e "const m = require('./sdk-build/javascript/index.js'); const manifest = m.manifest || m.parsedManifest || m.default; if (!manifest) { console.error('No manifest found in bundle'); process.exit(1); } console.log(JSON.stringify(manifest, null, 2))" > manifest.json
+all: x86
 
-pack: manifest.json
-	@echo "Packing s9pk..."
-	@mkdir -p assets
-	@rm -rf ./javascript
-	@cp -r sdk-build/javascript ./javascript
-	@echo '{"type": "commonjs"}' > ./javascript/package.json
+x86 x86_64: $(PKG_ID)_x86_64.s9pk
+arm arm64 aarch64: $(PKG_ID)_aarch64.s9pk
+
+javascript/index.js: $(shell find startos -type f) node_modules
+	npm run startos:check
+	node node_modules/@start9labs/start-sdk/lint.mjs
+	npm run startos:build
+
+node_modules: package-lock.json package.json
+	npm ci
+
+$(PKG_ID)_%.s9pk: javascript/index.js startos/icon.png startos/instructions.md LICENSE | check-deps
 	start-cli s9pk pack \
 		--javascript $(CURDIR)/javascript \
 		--icon startos/icon.png \
 		--instructions startos/instructions.md \
 		--license LICENSE \
 		--assets $(CURDIR)/assets \
-		-o $(PKG)
-	@rm -rf ./javascript
+		--arch=$* \
+		-o $@
+	@start-cli s9pk inspect $@ manifest | jq -r '"\n✅ \(.title) v\(.version)  [\([.images[].arch] | flatten | unique | join(", "))]  sdk \(.sdkVersion)\n"'
+
+install: | check-deps
+	@S9PK=$$(start-cli s9pk select) || exit 1; \
+	printf "\n🚀 Installing %s ...\n" "$$S9PK"; \
+	start-cli package install -s "$$S9PK"
+
+check-deps:
+	@command -v start-cli >/dev/null || \
+		(echo "Error: start-cli not found. See https://docs.start9.com/packaging/environment-setup.html" && exit 1)
+	@command -v jq >/dev/null || (echo "Error: jq not found." && exit 1)
 
 clean:
-	rm -f $(PKG) manifest.json
-	rm -rf sdk-build/javascript sdk-build/node_modules ./javascript
+	rm -rf $(PKG_ID)_x86_64.s9pk $(PKG_ID)_aarch64.s9pk javascript

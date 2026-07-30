@@ -28,6 +28,6 @@ dist-ssr
 
 # StartOS build artifacts
 *.s9pk
-sdk-build/javascript/
-sdk-build/node_modules/
+javascript
+ncc-cache
 __pycache__/
