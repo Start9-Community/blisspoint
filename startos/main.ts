@@ -18,7 +18,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       'blisspoint-sub',
     ),
     exec: {
-      command: ['sh', '-c', 'proxy-rs & node server/serve.cjs'],
+      command: sdk.useEntrypoint(),
     },
     ready: {
       display: i18n('Web Interface'),
