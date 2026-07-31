@@ -59,13 +59,20 @@ so the two cannot drift apart.
 | ------ | ----------- |
 | `main` | `/data`     |
 
-**The service writes nothing to this volume.** All user state — the miner list,
+The Node server persists all user state to `/data/state.json` — the miner list,
 per-miner names, the captured power ceiling, saved miner API passwords, and the
-theme — is held in the **browser's** `localStorage` under the key
-`blisspoint.state.v2`, not on the server. The volume is mounted so the package
-has a durable, backed-up location available, but it is empty in normal
-operation. See [Limitations](#limitations-and-differences) for what this means
-in practice.
+theme. Writes go to a temporary file and are then renamed, so an interrupted
+write cannot truncate the saved settings.
+
+The browser keeps a `localStorage` copy under `blisspoint.state.v2` as a cache
+and as a fallback when the server endpoint is unreachable, but the server copy
+is authoritative: on load the UI prefers `/data/state.json` and falls back to
+`localStorage` only if the request fails.
+
+> [!IMPORTANT]
+> Miner API passwords are stored in `/data/state.json` in plaintext, and are
+> therefore included in backups. See
+> [Limitations](#limitations-and-differences).
 
 ## Installation and First-Run Flow
 
@@ -81,9 +88,9 @@ re-added after its target is changed in the miner's own interface.
 
 ## Configuration Management
 
-| StartOS-Managed | Upstream-Managed                                               |
-| --------------- | -------------------------------------------------------------- |
-| Nothing         | Every setting, via the Blisspoint web interface (browser-side) |
+| StartOS-Managed | Upstream-Managed                                                     |
+| --------------- | --------------------------------------------------------------------- |
+| Nothing         | Every setting, via the Blisspoint web interface, saved to `/data`     |
 
 The package defines no file models, no environment variables, and no
 configuration actions. `startos/fileModels/` is intentionally empty.
@@ -114,13 +121,17 @@ None. The package ships an empty `sdk.Actions.of()`.
 
 ## Backups and Restore
 
-The `main` volume is included in backups via `sdk.Backups.ofVolumes('main')`.
+The `main` volume is included in backups via `sdk.Backups.ofVolumes('main')`,
+which captures `/data/state.json` — the miner list, per-miner names, captured
+power ceilings, saved miner API passwords, and the theme.
 
-Because the service stores nothing on that volume (see
-[Volume and Data Layout](#volume-and-data-layout)), **a backup captures no user
-data and a restore returns none.** A restored install comes up with an empty
-miner list. The miner configuration lives in whichever browser was used to set
-it up.
+A restored install comes back with its miners already configured. Because the
+saved passwords are part of that file, **a backup of this service contains
+miner API credentials in plaintext**; treat it with the same care as any other
+service backup.
+
+Nothing else is stored: live readings are polled from the miners on each
+refresh and are not persisted.
 
 ## Health Checks
 
@@ -141,23 +152,21 @@ None.
 
 ## Limitations and Differences
 
-1. **Miner setup is per-browser, not per-server.** The miner list and all
-   per-miner settings live in the browser's `localStorage`. Opening Blisspoint
-   from a different phone, browser, or private window shows an empty list, and
-   clearing site data loses the configuration.
-2. **That configuration is not covered by StartOS backups.** Backups include the
-   `main` volume, which the service never writes to.
-3. **Miner API passwords are stored in the browser.** Passwords entered for
-   pause/resume or power control are persisted in `localStorage` alongside the
-   rest of the miner state.
-4. **The LAN scan guesses the subnet.** It derives the `/24` to sweep from the
+1. **Miner API passwords are stored in plaintext on the server.** Passwords
+   entered for pause/resume or power control are written to `/data/state.json`
+   as given, and are consequently included in every backup of this service.
+2. **Last write wins across devices.** Each browser saves the whole state
+   object, so two people editing from different phones at the same time will
+   have one overwrite the other's change. There is no merge or conflict
+   prompt.
+3. **The LAN scan guesses the subnet.** It derives the `/24` to sweep from the
    first configured miner's IP address, falling back to `192.168.1.0/24` when no
    miner is configured yet. On any other subnet, add one miner by IP address
    first; subsequent scans then target the right range.
-5. **Control support is narrower than monitoring support.** Reading live stats
+4. **Control support is narrower than monitoring support.** Reading live stats
    works across the firmwares `asic-rs` supports; setting a power target and
    pausing/resuming only work where the firmware exposes them.
-6. **No StartOS actions.** Everything is driven from the web interface.
+5. **No StartOS actions.** Everything is driven from the web interface.
 
 ## What Is Unchanged from Upstream
 
@@ -188,7 +197,8 @@ dependencies: none
 startos_managed_env_vars: []
 actions: []
 notes:
-  - user state is browser localStorage, not the mounted volume
+  - user state persists to /data/state.json; browser localStorage is a cache/fallback
+  - that file holds miner API passwords in plaintext and is included in backups
   - requires outbound LAN reachability to miners
   - proxy-rs is internal only, on 127.0.0.1:8081
 ```

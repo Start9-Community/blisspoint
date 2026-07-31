@@ -14,9 +14,9 @@ A single web interface, meant for a phone. It shows one miner at a time with its
 hashrate, power draw, chip temperature and fan speed, refreshed every few
 seconds, and gives you one slider for heat and one button for pause/resume.
 
-Your miner list and settings are stored **in the browser you set them up in**,
-not on your server. That has consequences worth knowing up front — see
-[Limitations](#limitations).
+Your miner list and settings are saved on your server, so they are included in
+your StartOS backups and are there whichever phone or browser you open
+Blisspoint from.
 
 ## Getting set up
 
@@ -59,13 +59,12 @@ bottom switches between them.
 
 ## Limitations
 
-- **Your setup does not follow you between devices.** The miner list, names,
-  captured ceilings and saved miner passwords live in the browser's local
-  storage. Open Blisspoint on a different phone and you start from an empty
-  list; clear that browser's site data and the configuration is gone.
-- **Server backups do not include it.** Because none of that is stored on the
-  server, backing up and restoring Blisspoint restores an empty miner list. Keep
-  a note of your miners' IP addresses.
+- **Your miner passwords are kept in your backups.** Any miner password you
+  enter is saved on the server as ordinary text so it survives restarts, which
+  means it is also inside every backup of Blisspoint. Keep those backups
+  somewhere you trust.
+- **Two people editing at once will overwrite each other.** If you change
+  settings on two phones at the same moment, whichever saves last wins.
 - **Control depends on the firmware.** Live monitoring works across a wide range
   of miners. Setting a power target and pausing only work where the firmware
   supports it — check the asic-rs link above if a button does nothing.
