@@ -25,10 +25,9 @@ reaches the miners directly.
 
 1. Open the **Web UI** — ideally on a phone or tablet connected to that same
    network, since that is what the layout is designed for.
-2. Open the miner menu at the bottom and tap **Scan LAN**. If nothing is found,
-   add the miner's IP address by hand in **Settings** — a scan with no miners
-   configured yet only sweeps `192.168.1.x`, so on any other network you need to
-   add the first miner manually.
+2. Open the miner menu at the bottom and tap **Scan LAN**. It checks the
+   network your server is on plus the common home ranges. If nothing is found,
+   add the miner's IP address by hand in **Settings**.
 3. Tap the miner to select it. Its live readings appear at the top.
 
 On the first successful connection Blisspoint reads the miner's own power target
@@ -50,7 +49,7 @@ from Blisspoint.
 
 The pause/resume button stops and restarts mining. Some firmwares ask for the
 miner's own API password the first time — the username is `root`. The password
-is saved in your browser so you are not asked again on that device.
+is saved on your server, so you are not asked again from any device.
 
 ### Adding more miners
 
@@ -60,9 +59,10 @@ bottom switches between them.
 ## Limitations
 
 - **Your miner passwords are kept in your backups.** Any miner password you
-  enter is saved on the server as ordinary text so it survives restarts, which
-  means it is also inside every backup of Blisspoint. Keep those backups
-  somewhere you trust.
+  enter is saved on the server so it survives restarts. It is scrambled where it
+  sits, but the key that unscrambles it is saved right beside it and both go
+  into every backup of Blisspoint — so anyone holding a backup can read those
+  passwords. Keep backups somewhere you trust.
 - **Two people editing at once will overwrite each other.** If you change
   settings on two phones at the same moment, whichever saves last wins.
 - **Control depends on the firmware.** Live monitoring works across a wide range

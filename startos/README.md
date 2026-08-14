@@ -64,14 +64,18 @@ per-miner names, the captured power ceiling, saved miner API passwords, and the
 theme. Writes go to a temporary file and are then renamed, so an interrupted
 write cannot truncate the saved settings.
 
+String values are encrypted at rest with AES-256-GCM and stored as
+`enc:v1:<iv>:<tag>:<ciphertext>`. The 32-byte key is generated on first write and
+kept at `/data/secret.key`, mode `0600`.
+
 The browser keeps a `localStorage` copy under `blisspoint.state.v2` as a cache
 and as a fallback when the server endpoint is unreachable, but the server copy
 is authoritative: on load the UI prefers `/data/state.json` and falls back to
 `localStorage` only if the request fails.
 
 > [!IMPORTANT]
-> Miner API passwords are stored in `/data/state.json` in plaintext, and are
-> therefore included in backups. See
+> The encryption key shares the volume with the ciphertext, so a backup carries
+> both. Encryption protects the state file at rest, not the backup. See
 > [Limitations](#limitations-and-differences).
 
 ## Installation and First-Run Flow
@@ -123,11 +127,12 @@ None. The package ships an empty `sdk.Actions.of()`.
 
 The `main` volume is included in backups via `sdk.Backups.ofVolumes('main')`,
 which captures `/data/state.json` — the miner list, per-miner names, captured
-power ceilings, saved miner API passwords, and the theme.
+power ceilings, saved miner API passwords, and the theme — along with
+`/data/secret.key`.
 
 A restored install comes back with its miners already configured. Because the
-saved passwords are part of that file, **a backup of this service contains
-miner API credentials in plaintext**; treat it with the same care as any other
+backup holds the key next to the ciphertext, **a backup of this service is
+readable as miner API credentials**; treat it with the same care as any other
 service backup.
 
 Nothing else is stored: live readings are polled from the miners on each
@@ -152,17 +157,18 @@ None.
 
 ## Limitations and Differences
 
-1. **Miner API passwords are stored in plaintext on the server.** Passwords
-   entered for pause/resume or power control are written to `/data/state.json`
-   as given, and are consequently included in every backup of this service.
+1. **A backup exposes miner API passwords.** They are encrypted in
+   `/data/state.json`, but `/data/secret.key` is in the same volume and so in
+   the same backup. Anyone holding the backup can read them.
 2. **Last write wins across devices.** Each browser saves the whole state
    object, so two people editing from different phones at the same time will
    have one overwrite the other's change. There is no merge or conflict
    prompt.
-3. **The LAN scan guesses the subnet.** It derives the `/24` to sweep from the
-   first configured miner's IP address, falling back to `192.168.1.0/24` when no
-   miner is configured yet. On any other subnet, add one miner by IP address
-   first; subsequent scans then target the right range.
+3. **The LAN scan sweeps a fixed set of `/24`s.** Each scan covers the first
+   configured miner's `/24`, the container's own `/24` as reported by
+   `GET /api/subnet`, and `192.168.1`, `192.168.0`, `10.0.0` unconditionally.
+   Docker's `172.16/12` is excluded from the two derived entries. Miners on any
+   other subnet have to be added by IP address.
 4. **Control support is narrower than monitoring support.** Reading live stats
    works across the firmwares `asic-rs` supports; setting a power target and
    pausing/resuming only work where the firmware exposes them.
@@ -198,7 +204,8 @@ startos_managed_env_vars: []
 actions: []
 notes:
   - user state persists to /data/state.json; browser localStorage is a cache/fallback
-  - that file holds miner API passwords in plaintext and is included in backups
+  - that file holds miner API passwords, AES-256-GCM encrypted under /data/secret.key
+  - both are in the same volume, so a backup is readable as credentials
   - requires outbound LAN reachability to miners
   - proxy-rs is internal only, on 127.0.0.1:8081
 ```

@@ -1,84 +1,22 @@
 name: Release
 
-# This fork maintains only the StartOS wrapper. The Docker image is built and
-# published by upstream (heatpunk/blisspoint); we pack an s9pk against the tag
-# named in startos/manifest/index.ts and never push an image of our own.
-
 on:
   push:
     tags:
-      - 'v*.*.*'
-  workflow_dispatch:
+      # StartOS release tags carry the packaging revision as `_<n>` (v0.6.0_0),
+      # written by tagAndRelease. The app's own tags are plain `v0.6.0`, which
+      # `v*.*` would also match — so this filter names the underscore.
+      - 'v*_*'
 
 jobs:
-  s9pk:
-    name: Build s9pk & create release
-    runs-on: ubuntu-latest
+  release:
+    uses: Start9Labs/start-technologies/.github/workflows/release.yml@master
+    with:
+      RELEASE_REGISTRY: ${{ vars.RELEASE_REGISTRY }}
+      S3_S9PKS_BASE_URL: ${{ vars.S3_S9PKS_BASE_URL }}
+    secrets:
+      DEV_KEY: ${{ secrets.DEV_KEY }}
+      S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+      S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
     permissions:
       contents: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install squashfs-tools-ng
-        run: sudo apt-get update && sudo apt-get install -y squashfs-tools-ng
-
-      - name: Install start-cli
-        run: |
-          curl -fsSL https://start9.com/start-cli/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Initialize packaging workspace
-        run: |
-          cd "$GITHUB_WORKSPACE/.."
-          "$HOME/.local/bin/start-cli" s9pk init-workspace
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install deps
-        run: npm ci
-
-      - name: Typecheck and bundle the StartOS package
-        run: |
-          npm run startos:check
-          node node_modules/@start9labs/start-sdk/lint.mjs
-          npm run startos:build
-
-      - name: Generate developer key
-        run: |
-          mkdir -p ~/.startos
-          openssl genpkey -algorithm Ed25519 -out ~/.startos/id.key.pem
-
-      - name: Pack s9pk
-        run: |
-          echo "127.0.0.1 dev-vm.local" | sudo tee -a /etc/hosts
-          start-cli s9pk pack \
-            --javascript "$GITHUB_WORKSPACE/javascript" \
-            --icon startos/icon.png \
-            --instructions startos/instructions.md \
-            --license LICENSE \
-            --assets "$GITHUB_WORKSPACE/assets" \
-            -o blisspoint.s9pk
-
-      - name: Inspect manifest
-        run: start-cli s9pk inspect blisspoint.s9pk manifest
-
-      - name: Resolve package version
-        id: ver
-        run: |
-          v=$(start-cli s9pk inspect blisspoint.s9pk manifest | jq -r .version)
-          # git refs cannot contain ':', so the tag form replaces it with '_'
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "tag=v${v//:/_}" >> "$GITHUB_OUTPUT"
-          echo "Packaged $v"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.ver.outputs.tag }}
-          name: ${{ github.ref_type == 'tag' && github.ref_name || steps.ver.outputs.tag }}
-          files: blisspoint.s9pk
-          generate_release_notes: true
-          fail_on_unmatched_files: true

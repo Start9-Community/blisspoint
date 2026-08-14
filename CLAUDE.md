@@ -36,5 +36,5 @@ kommunikation med minern via biblioteket asic-rs och lyssnar på 127.0.0.1:8081;
 1. Bumpa version i `startos/versions/current.ts` och Docker-taggen i `startos/manifest/index.ts`.
 2. Bumpa `version` i `umbrel/blisspoint/umbrel-app.yml` + image-taggen i `umbrel/blisspoint/docker-compose.yml`, och spegla till repot `heatpunk/umbrel-app-store`.
 3. Bumpa `version` i `blisspoint-addon/config.yaml` (Home Assistant hämtar imagen med versionen som tagg) och i `custom_components/blisspoint/manifest.json`.
-4. Committa och pusha till `main`.
-5. Trigga `release.yml` via `workflow_dispatch` – den packar `blisspoint.s9pk` mot den redan publicerade imagen och skapar en GitHub Release automatiskt. Den bygger ingen Docker-image.
+4. Öppna en PR mot `main` i det här repot. PR-bygget packar en s9pk per arkitektur som du kan ladda ner och testa.
+5. När PR:en mergas sker resten automatiskt: `tagAndRelease.yml` taggar, packar mot den redan publicerade imagen, skapar en GitHub Release och publicerar till Start9:s community-register. Den bygger ingen Docker-image.

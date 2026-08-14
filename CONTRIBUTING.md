@@ -39,7 +39,7 @@ CI runs all of these on every PR.
 | `proxy-rs/` | Rust service; all miner communication via [asic-rs](https://github.com/256foundation/asic-rs) |
 | `startos/` | StartOS (Start9) packaging — see [startos/README.md](startos/README.md) |
 | `umbrel/`, `blisspoint-addon/`, `custom_components/` | Umbrel and Home Assistant packaging |
-| `.github/workflows/` | CI, release, and test-build pipelines |
+| `.github/workflows/` | App CI (`ci.yml`) plus the Start9 packaging pipelines (`build.yml`, `tagAndRelease.yml`, `release.yml`) |
 
 ### Building the StartOS package locally
 
@@ -59,7 +59,9 @@ Blisspoint does not implement per-firmware protocols itself — that lives upstr
 
 ## Releasing
 
-Releases are cut from `main` via the `release.yml` workflow: bump the version in `startos/versions/current.ts` and, when adopting a newer app build, the image tag in `startos/manifest/index.ts`. Then run the workflow. It packs the s9pk against the published image and creates the GitHub Release; it does **not** build or push a container image.
+Releases are cut automatically from `main`. Bump the version in `startos/versions/current.ts` and, when adopting a newer app build, the image tag in `startos/manifest/index.ts`, then open a PR. On merge, `tagAndRelease.yml` tags the commit, packs an s9pk per architecture against the published image, creates the GitHub Release, and publishes to the Start9 Community Registry. It does **not** build or push a container image — that happens in [heatpunk/blisspoint](https://github.com/heatpunk/blisspoint).
+
+A version already present on the community registry is skipped, so a packaging-only fix needs its own `:<revision>` bump to ship.
 
 `startos/versions/current.ts` carries a two-part version, `<upstream>:<revision>`. Bump the upstream part when adopting a new app version; bump only the revision when the change is packaging-only. The `Makefile` reads the package id from the manifest and needs no edit.
 
