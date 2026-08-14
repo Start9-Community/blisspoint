@@ -4,10 +4,16 @@
 # `npm run startos:check` and `npm run startos:build`.
 
 PKG_ID := blisspoint
+# The build/release workflows read this with `make -s print-TARGETS` and fan out
+# one matrix runner per target.
+TARGETS := x86 arm
 
 .PHONY: all x86 x86_64 arm arm64 aarch64 install clean check-deps
 
-all: x86
+all: $(TARGETS)
+
+print-%:
+	@echo '$($*)'
 
 x86 x86_64: $(PKG_ID)_x86_64.s9pk
 arm arm64 aarch64: $(PKG_ID)_aarch64.s9pk
