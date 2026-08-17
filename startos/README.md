@@ -4,19 +4,17 @@
 
 # Blisspoint on StartOS
 
-> **Upstream docs:** <https://github.com/heatpunk/blisspoint#readme>
->
-> The application is developed at [heatpunk/blisspoint]; this repository is the
-> StartOS packaging fork of it. Anything not described in this document behaves
-> exactly as the upstream README and the app itself describe.
+> Everything not listed in this document should behave the same as upstream
+> Blisspoint. If a feature, setting, or behavior is not mentioned here, the
+> upstream documentation is accurate and fully applicable — see the
+> Documentation section of `instructions.md` for links.
 
-[heatpunk/blisspoint]: https://github.com/heatpunk/blisspoint
+[Blisspoint](https://github.com/heatpunk/blisspoint) is a deliberately simple UI for running a Bitcoin ASIC miner as a space heater: one slider for heat output, a live readout, and a pause button. It is built for the people you share a home with rather than for the person who set the miner up.
 
-Blisspoint is a deliberately simple UI for running a bitcoin ASIC miner as a
-space heater: one slider for heat output, a live readout, and a pause button.
-It is built for the people you share a home with rather than for the person who
-set the miner up. This document covers what the StartOS package adds and how it
-is wired.
+This repository is a fork of the application's own, and the StartOS packaging lives under `startos/` rather than at the repository root — see [Image and Container Runtime](#image-and-container-runtime).
+
+- **Upstream repo:** <https://github.com/heatpunk/blisspoint>
+- **Wrapper repo:** <https://github.com/Start9-Community/blisspoint>
 
 ---
 
@@ -24,169 +22,123 @@ is wired.
 
 - [Image and Container Runtime](#image-and-container-runtime)
 - [Volume and Data Layout](#volume-and-data-layout)
-- [Installation and First-Run Flow](#installation-and-first-run-flow)
-- [Configuration Management](#configuration-management)
-- [Network Access and Interfaces](#network-access-and-interfaces)
-- [Actions](#actions)
-- [Backups and Restore](#backups-and-restore)
-- [Health Checks](#health-checks)
+- [File Models](#file-models)
 - [Dependencies](#dependencies)
+- [Network Access and Interfaces](#network-access-and-interfaces)
+- [Installation and First-Run Flow](#installation-and-first-run-flow)
+- [Actions](#actions)
+- [Tasks](#tasks)
+- [Health Checks](#health-checks)
+- [Backups and Restore](#backups-and-restore)
 - [Limitations and Differences](#limitations-and-differences)
-- [What Is Unchanged from Upstream](#what-is-unchanged-from-upstream)
-- [Contributing](#contributing)
 - [Quick Reference for AI Consumers](#quick-reference-for-ai-consumers)
 
 ---
 
 ## Image and Container Runtime
 
-| What          | Detail                                                                                       |
-| ------------- | -------------------------------------------------------------------------------------------- |
-| Image source  | `ghcr.io/heatpunk/blisspoint`, published by upstream from the `Dockerfile` in this tree |
-| Architectures | `x86_64`, `aarch64`                                                                          |
-| Entrypoint    | The image's own `CMD`, via `sdk.useEntrypoint()`                                             |
+One image, published by upstream and consumed unmodified — pinned by digest as well as tag.
 
-The `Dockerfile` builds in three stages: `proxy-rs` as a static musl binary
-(`rust:alpine`), the Vite/React UI to static assets on the build platform, and a
-`node:20-alpine` runtime carrying both. The container runs two processes — the
-Node server on port 80 and `proxy-rs` on loopback — from a single `sh -c`
-command. `startos/main.ts` does not restate that command; it defers to the image
-so the two cannot drift apart.
+| Property      | Value                                      |
+| ------------- | ------------------------------------------ |
+| Image         | `ghcr.io/heatpunk/blisspoint`              |
+| Architectures | x86_64, aarch64                            |
+| Entrypoint    | The image's own, via `sdk.useEntrypoint()` |
+
+| Subcontainer     | Purpose                                  |
+| ---------------- | ---------------------------------------- |
+| `blisspoint-sub` | The only daemon — the one to `attach` to |
+
+**Two processes run inside that one container**: a Node server on port 80 serving the UI, and `proxy-rs` on loopback doing all miner communication. The Node server reverse-proxies `/api/*` to it. `main.ts` deliberately does not restate that command — it defers to the image's own, so the two cannot drift apart.
+
+This repository is the application's own, forked, so the packaging is a subdirectory rather than the whole tree. That has one practical consequence worth knowing: the `Makefile` here is hand-written rather than the SDK's `s9pk.mk`, because `npm run build` in this tree is the Vite build, not the packaging bundle.
 
 ## Volume and Data Layout
 
-| Volume | Mount point |
-| ------ | ----------- |
-| `main` | `/data`     |
+One volume, holding everything the user has configured.
 
-The Node server persists all user state to `/data/state.json` — the miner list,
-per-miner names, the captured power ceiling, saved miner API passwords, and the
-theme. Writes go to a temporary file and are then renamed, so an interrupted
-write cannot truncate the saved settings.
+| Volume | Mount Point | Purpose                                          |
+| ------ | ----------- | ------------------------------------------------ |
+| `main` | `/data`     | The miner list, saved credentials, and the theme |
 
-String values are encrypted at rest with AES-256-GCM and stored as
-`enc:v1:<iv>:<tag>:<ciphertext>`. The 32-byte key is generated on first write and
-kept at `/data/secret.key`, mode `0600`.
+| Path               | Written by      | Holds                                                      |
+| ------------------ | --------------- | ---------------------------------------------------------- |
+| `/data/state.json` | The Node server | Miners, names, captured power ceilings, passwords, theme   |
+| `/data/secret.key` | The Node server | The AES-256-GCM key, mode `0600`, generated on first write |
 
-The browser keeps a `localStorage` copy under `blisspoint.state.v2` as a cache
-and as a fallback when the server endpoint is unreachable, but the server copy
-is authoritative: on load the UI prefers `/data/state.json` and falls back to
-`localStorage` only if the request fails.
+Writes go to a temporary file and are then renamed, so an interrupted write cannot truncate the saved settings.
 
-> [!IMPORTANT]
-> The encryption key shares the volume with the ciphertext, so a backup carries
-> both. Encryption protects the state file at rest, not the backup. See
-> [Limitations](#limitations-and-differences).
+String values in `state.json` are **encrypted at rest** as `enc:v1:<iv>:<tag>:<ciphertext>`. The key sits in the same volume, which means encryption protects the file on disk and **not** the backup — see [Backups and Restore](#backups-and-restore).
 
-## Installation and First-Run Flow
+The browser keeps a copy in `localStorage` as a cache and as a fallback when the server endpoint is unreachable, but the server copy is authoritative: on load the UI prefers `/data/state.json` and falls back to `localStorage` only if the request fails.
 
-There is no setup wizard, no generated credential, and no first-run task. Once
-the service is started the web interface is immediately usable, and opens on an
-empty miner list. The user adds a miner by IP address, or runs a LAN scan from
-within the UI.
+## File Models
 
-The power ceiling for each miner is captured from that miner's own reported
-power target the first time it connects, and then frozen. Raising it is
-deliberately not possible from Blisspoint; the miner must be removed and
-re-added after its target is changed in the miner's own interface.
+None. The package defines no file models, sets no environment variables, and writes nothing to the volume itself.
 
-## Configuration Management
-
-| StartOS-Managed | Upstream-Managed                                                     |
-| --------------- | --------------------------------------------------------------------- |
-| Nothing         | Every setting, via the Blisspoint web interface, saved to `/data`     |
-
-The package defines no file models, no environment variables, and no
-configuration actions. `startos/fileModels/` is intentionally empty.
-
-## Network Access and Interfaces
-
-| Interface | ID   | Port | Protocol | Purpose                  |
-| --------- | ---- | ---- | -------- | ------------------------ |
-| Web UI    | `ui` | 80   | HTTP     | The entire Blisspoint UI |
-
-The interface is bound through a `MultiHost` (`ui-multi`), so the user chooses
-where it is reachable from using the normal StartOS interface controls.
-
-Two things are **not** exposed:
-
-- `proxy-rs` listens on `127.0.0.1:8081` inside the container only. The Node
-  server reverse-proxies `/api/*` to it; nothing else can reach it.
-- The miner API itself is never exposed. Blisspoint talks outbound to miners.
-
-**Outbound LAN access is required.** The container must be able to reach the
-miners on the local network on their firmware's API port. This is the single
-network requirement of the service, and the one thing that makes it useless if
-unavailable.
-
-## Actions
-
-None. The package ships an empty `sdk.Actions.of()`.
-
-## Backups and Restore
-
-The `main` volume is included in backups via `sdk.Backups.ofVolumes('main')`,
-which captures `/data/state.json` — the miner list, per-miner names, captured
-power ceilings, saved miner API passwords, and the theme — along with
-`/data/secret.key`.
-
-A restored install comes back with its miners already configured. Because the
-backup holds the key next to the ciphertext, **a backup of this service is
-readable as miner API credentials**; treat it with the same care as any other
-service backup.
-
-Nothing else is stored: live readings are polled from the miners on each
-refresh and are not persisted.
-
-## Health Checks
-
-| Daemon    | Check                          | Grace period |
-| --------- | ------------------------------ | ------------ |
-| `primary` | `checkPortListening` on port 80 | SDK default  |
-
-Success message: "The web interface is ready".
-Failure message: "The web interface is not ready".
-
-The check confirms only that the UI server is accepting connections. It does not
-verify that any miner is reachable — a Blisspoint install with no miners
-configured is healthy.
+Every setting is the application's own, entered through its web interface and persisted by its Node server to `/data`. There is nothing on disk for StartOS to seed, merge, or repair, and nothing an action could correct — which is also why this package has no configuration action.
 
 ## Dependencies
 
 None.
 
+## Network Access and Interfaces
+
+One interface, and one un-published outbound requirement that matters more than it does.
+
+| Interface | Id   | Type | Port | Description              |
+| --------- | ---- | ---- | ---- | ------------------------ |
+| Web UI    | `ui` | ui   | 80   | The entire Blisspoint UI |
+
+Bound on the `ui-multi` MultiHost over HTTP and not masked.
+
+Two things are **not** exposed:
+
+- **`proxy-rs` listens on loopback inside the container only.** The Node server proxies `/api/*` to it; nothing outside the container can reach it.
+- **The miner's own API is never exposed.** Blisspoint talks outbound to miners; it does not front them.
+
+**Outbound LAN access is the single network requirement.** The container must be able to reach the miners on the local network on their firmware's API port. Nothing about the StartOS interface controls affects that — a Blisspoint reachable from anywhere is still useless if it cannot reach the miners, which is the most common way this service appears broken while being perfectly healthy.
+
+## Installation and First-Run Flow
+
+There is no wizard, no generated credential, and no task. Once started, the web interface is immediately usable and opens on an empty miner list.
+
+The user adds a miner by IP address or runs a LAN scan from inside the UI. **The first successful connection captures that miner's own reported power target and freezes it as the ceiling** the slider will ever allow — which is the package's whole safety model, and is deliberately not raisable from Blisspoint. Changing it means raising the target in the miner's own interface, then removing and re-adding the miner here.
+
+## Actions
+
+None. The package ships an empty action set; everything is driven from the web interface.
+
+## Tasks
+
+None. This package raises no tasks, so the service is never held on a prompt and its ordinary controls are always available.
+
+## Health Checks
+
+One check, on the only daemon.
+
+| Check     | Displayed as    | Method               | Grace Period |
+| --------- | --------------- | -------------------- | ------------ |
+| `primary` | "Web Interface" | Port 80 is listening | default      |
+
+**The check says nothing about miners.** It confirms the UI server is accepting connections, and a Blisspoint with no miners configured — or with miners it cannot reach — is green. That is correct, and it is also why the health check is not the place to diagnose a miner problem; the UI is.
+
+## Backups and Restore
+
+The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. That is `state.json` and `secret.key`.
+
+**A backup of this service is readable as miner API credentials.** The passwords in `state.json` are encrypted, but `secret.key` is in the same volume and therefore in the same backup, so anyone holding the backup holds both halves. Treat it accordingly.
+
+A restored install comes back with its miners already configured, including their captured power ceilings. Nothing else is stored: live readings are polled from the miners on each refresh and are never persisted.
+
 ## Limitations and Differences
 
-1. **A backup exposes miner API passwords.** They are encrypted in
-   `/data/state.json`, but `/data/secret.key` is in the same volume and so in
-   the same backup. Anyone holding the backup can read them.
-2. **Last write wins across devices.** Each browser saves the whole state
-   object, so two people editing from different phones at the same time will
-   have one overwrite the other's change. There is no merge or conflict
-   prompt.
-3. **The LAN scan sweeps a fixed set of `/24`s.** Each scan covers the first
-   configured miner's `/24`, the container's own `/24` as reported by
-   `GET /api/subnet`, and `192.168.1`, `192.168.0`, `10.0.0` unconditionally.
-   Docker's `172.16/12` is excluded from the two derived entries. Miners on any
-   other subnet have to be added by IP address.
-4. **Control support is narrower than monitoring support.** Reading live stats
-   works across the firmwares `asic-rs` supports; setting a power target and
-   pausing/resuming only work where the firmware exposes them.
-5. **No StartOS actions.** Everything is driven from the web interface.
-
-## What Is Unchanged from Upstream
-
-The StartOS package runs the image published by upstream — the same one the
-Docker, Umbrel, and Home Assistant installs use — with no StartOS-specific
-patches to the UI, the Node server, or `proxy-rs`. This fork's changes are
-confined to `startos/`, the build files, and the CI workflows. Miner
-communication, the power-ceiling capture rule, the theme set, and the API
-surface documented in the upstream README all behave identically here.
-
-## Contributing
-
-See [CONTRIBUTING.md](../CONTRIBUTING.md) in the repository root for
-prerequisites, checks, and the release flow.
+1. **A backup exposes miner API passwords.** The key travels with the ciphertext.
+2. **Last write wins across devices.** Each browser saves the whole state object, so two people editing from different phones at once will have one overwrite the other. There is no merge and no conflict prompt.
+3. **The LAN scan sweeps a fixed set of `/24`s** — the first configured miner's, the container's own, and `192.168.1`, `192.168.0`, `10.0.0` unconditionally, with Docker's `172.16/12` excluded from the derived entries. Miners on any other subnet must be added by IP address.
+4. **Control support is narrower than monitoring support.** Reading live stats works across the firmwares `asic-rs` supports; setting a power target and pausing only work where the firmware exposes them.
+5. **No StartOS actions and no configuration surface.** Everything is in the web interface.
+6. **The power ceiling cannot be raised from Blisspoint** — by design.
 
 ---
 
@@ -194,18 +146,21 @@ prerequisites, checks, and the release flow.
 
 ```yaml
 package_id: blisspoint
-architectures: [x86_64, aarch64]
+image: ghcr.io/heatpunk/blisspoint # pinned by digest as well as tag
+architectures:
+  - x86_64
+  - aarch64
+subcontainers:
+  - blisspoint-sub
 volumes:
-  main: /data
-ports:
-  ui: 80
-dependencies: none
+  main: /data # state.json and secret.key
+file_models: []
 startos_managed_env_vars: []
+dependencies: []
+interfaces:
+  ui: { type: ui, port: 80 }
 actions: []
-notes:
-  - user state persists to /data/state.json; browser localStorage is a cache/fallback
-  - that file holds miner API passwords, AES-256-GCM encrypted under /data/secret.key
-  - both are in the same volume, so a backup is readable as credentials
-  - requires outbound LAN reachability to miners
-  - proxy-rs is internal only, on 127.0.0.1:8081
+tasks: []
+health_checks:
+  - primary # displayed "Web Interface"
 ```
