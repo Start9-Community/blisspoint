@@ -26,8 +26,11 @@ javascript/index.js: $(shell find startos -type f) node_modules
 node_modules: package-lock.json package.json
 	npm ci
 
-$(PKG_ID)_%.s9pk: javascript/index.js startos/icon.png startos/instructions.md LICENSE | check-deps
-	start-cli s9pk pack \
+# `startos` is the package root: every other input is named explicitly below, but
+# README.md is resolved from this path alone and has no flag of its own — without
+# it the pack ships the application's README instead of the package's.
+$(PKG_ID)_%.s9pk: javascript/index.js startos/icon.png startos/instructions.md startos/README.md LICENSE | check-deps
+	start-cli s9pk pack startos \
 		--javascript $(CURDIR)/javascript \
 		--icon startos/icon.png \
 		--instructions startos/instructions.md \
